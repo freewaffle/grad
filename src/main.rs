@@ -82,7 +82,7 @@ fn main() {
     let mut pc: usize = 0;
     'vm_loop: loop {
         if pc >= commands.len() {
-            break;
+            break 'vm_loop;
         }
 
         let command = &commands[pc];
