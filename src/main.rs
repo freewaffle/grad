@@ -168,8 +168,8 @@ fn main() {
                 let dest = command_arg!(0, vm::Value::Address, "dest is not an Address");
                 let dest = *dest as usize;
 
-                let value = command_arg!(1, vm::Value::Number, "value is not a Number");
-                let right = *value;
+                let right = command_arg!(1, vm::Value::Number, "value is not a Number");
+                let right = *right;
 
                 if dest >= vm::REGISTER_COUNT {
                     error!("dest is out of bounds");
@@ -207,8 +207,8 @@ fn main() {
                 let dest = command_arg!(0, vm::Value::Address, "dest is not an Address");
                 let dest = *dest as usize;
 
-                let value = command_arg!(1, vm::Value::Boolean, "value is not a Boolean");
-                let right = *value;
+                let right = command_arg!(1, vm::Value::Boolean, "value is not a Boolean");
+                let right = *right;
 
                 if dest >= vm::REGISTER_COUNT {
                     error!("dest is out of bounds");
