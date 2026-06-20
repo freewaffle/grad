@@ -8,7 +8,10 @@ mod vm {
     #[derive(Clone, Copy, Debug)]
     pub enum Value {
         Nil,
+
         Number(f32),
+        Boolean(bool),
+
         Address(u8)
     }
 
@@ -18,13 +21,27 @@ mod vm {
         Dismiss,
         HaltVM,
 
-        SaveRegister,
-        CopyRegister,
+        Save,
+        Copy,
 
         Add,
         Subtract,
         Multiply,
         Divide,
+        IntDivide,
+        Modulo,
+        Power,
+
+        LogicalAnd,
+        LogicalOr,
+        LogicalNot,
+
+        Equal,
+        NotEqual,
+        GreaterThan,
+        GreaterThanOrEqual,
+        LessThan,
+        LessThanOrEqual,
     }
     
     pub struct Command {
@@ -38,7 +55,7 @@ fn main() {
 
     let commands = [
         Command {
-            kind: CommandKind::SaveRegister,
+            kind: CommandKind::Save,
             args: vec![
                 Value::Address(0),
                 Value::Number(4.)
@@ -101,7 +118,7 @@ fn main() {
                 break 'vm_loop;
             }
 
-            CommandKind::SaveRegister => {
+            CommandKind::Save => {
                 let dest = command_arg!(0, vm::Value::Address, "dest is not an Address");
                 let dest = *dest as usize;
 
@@ -115,7 +132,7 @@ fn main() {
                 }
             }
 
-            CommandKind::CopyRegister => {
+            CommandKind::Copy => {
                 let r1 = command_arg!(0, vm::Value::Address, "dest is not an Address");
                 let dest = *r1 as usize;
 
@@ -138,35 +155,84 @@ fn main() {
             CommandKind::Add |
             CommandKind::Subtract |
             CommandKind::Multiply |
-            CommandKind::Divide => {
+            CommandKind::Divide |
+            CommandKind::IntDivide |
+            CommandKind::Modulo |
+            CommandKind::Power |
+            CommandKind::Equal |
+            CommandKind::NotEqual |
+            CommandKind::GreaterThan |
+            CommandKind::GreaterThanOrEqual |
+            CommandKind::LessThan |
+            CommandKind::LessThanOrEqual => {
                 let dest = command_arg!(0, vm::Value::Address, "dest is not an Address");
                 let dest = *dest as usize;
 
                 let value = command_arg!(1, vm::Value::Number, "value is not a Number");
-                let value = *value;
+                let right = *value;
 
                 if dest >= vm::REGISTER_COUNT {
                     error!("dest is out of bounds");
                     proceed!();
                 }
                 
-                let (dest, dest_value) = if let vm::Value::Number(value) = registers[dest] {
+                let (dest, left) = if let vm::Value::Number(value) = registers[dest] {
                     (&mut registers[dest], value)
                 } else {
                     error!("dest's value is not a Number");
                     proceed!();
                 };
 
-                let new_value = match command.kind {
-                    CommandKind::Add => dest_value + value,
-                    CommandKind::Subtract => dest_value - value,
-                    CommandKind::Multiply => dest_value * value,
-                    CommandKind::Divide => dest_value / value,
+                *dest = match command.kind {
+                    CommandKind::Add => vm::Value::Number(left + right),
+                    CommandKind::Subtract => vm::Value::Number(left - right),
+                    CommandKind::Multiply => vm::Value::Number(left * right),
+                    CommandKind::Divide => vm::Value::Number(left / right),
+                    CommandKind::IntDivide => vm::Value::Number((left / right).floor()),
+                    CommandKind::Modulo => vm::Value::Number(left % right),
+                    CommandKind::Power => vm::Value::Number(left.powf(right)),
+                    CommandKind::Equal => vm::Value::Boolean(left == right),
+                    CommandKind::NotEqual => vm::Value::Boolean(left != right),
+                    CommandKind::GreaterThan => vm::Value::Boolean(left > right),
+                    CommandKind::GreaterThanOrEqual => vm::Value::Boolean(left >= right),
+                    CommandKind::LessThan => vm::Value::Boolean(left < right),
+                    CommandKind::LessThanOrEqual => vm::Value::Boolean(left <= right),
                     _ => unreachable!()
                 };
-
-                *dest = vm::Value::Number(new_value);
             }
+
+            CommandKind::LogicalAnd |
+            CommandKind::LogicalOr |
+            CommandKind::LogicalNot => {
+                let dest = command_arg!(0, vm::Value::Address, "dest is not an Address");
+                let dest = *dest as usize;
+
+                let value = command_arg!(1, vm::Value::Boolean, "value is not a Boolean");
+                let right = *value;
+
+                if dest >= vm::REGISTER_COUNT {
+                    error!("dest is out of bounds");
+                    proceed!();
+                }
+                
+                let (dest, left) = if let vm::Value::Boolean(value) = registers[dest] {
+                    (&mut registers[dest], value)
+                } else {
+                    error!("dest's value is not a Boolean");
+                    proceed!();
+                };
+
+                *dest = match command.kind {
+                    CommandKind::LogicalAnd => vm::Value::Boolean(left && right),
+                    CommandKind::LogicalOr => vm::Value::Boolean(left || right),
+                    CommandKind::LogicalNot => vm::Value::Boolean(!right),
+                    _ => unreachable!()
+                };
+            }
+
+            /*
+            
+            */
         }
 
         proceed!();
