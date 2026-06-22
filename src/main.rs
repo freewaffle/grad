@@ -1,9 +1,13 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::all)]
 
+use std::collections::HashMap;
+
 #[allow(dead_code)]
 mod vm {
     pub const REGISTER_COUNT: usize = 128;
+
+    pub type AddressType = u8;
 
     #[derive(Clone, Copy, Debug)]
     pub enum Value {
@@ -12,7 +16,7 @@ mod vm {
         Number(f32),
         Boolean(bool),
 
-        Address(u8)
+        Address(AddressType)
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -42,18 +46,39 @@ mod vm {
         GreaterThanOrEqual,
         LessThan,
         LessThanOrEqual,
+
+        Compare,
+        Jump,
+        JumpToBeginning,
+        Break,
     }
     
     pub struct Command {
         pub kind: CommandKind,
         pub args: Vec<Value>
     }
+
+    pub struct Routine {
+        pub closure_addr: AddressType,
+        pub pc: usize
+    }
+
+    impl Routine {
+        pub fn new(closure_addr: AddressType) -> Self {
+            Self {
+                closure_addr,
+                pc: 0
+            }
+        }
+    }
 }
 
 fn main() {
     use vm::*;
 
-    let commands = [
+    let mut closures: HashMap<AddressType, Vec<Command>> = HashMap::new();
+
+    let main = vec![
         Command {
             kind: CommandKind::Save,
             args: vec![
@@ -77,15 +102,24 @@ fn main() {
         },
     ];
 
+    closures.insert(0, main);
+
+    let mut routines: Vec<Routine> = vec![
+        Routine::new(0)
+    ];
+
     let mut registers = [vm::Value::Nil; vm::REGISTER_COUNT];
 
-    let mut pc: usize = 0;
-    'vm_loop: loop {
-        if pc >= commands.len() {
-            break 'vm_loop;
-        }
-
-        let command = &commands[pc];
+    'vm_loop: while let Some(routine) = routines.last_mut() {
+        let pc = &mut routine.pc;
+        let closure = closures.get(&routine.closure_addr).expect("invalid routine's closure address");
+        let command = if let Some(command) = closure.get(*pc) {
+            command
+        } else {
+            // no more commands to execute in this routine
+            routines.pop();
+            continue 'vm_loop;
+        };
 
         macro_rules! error {
             ($fmt:expr) => {
@@ -95,7 +129,7 @@ fn main() {
 
         macro_rules! proceed {
             () => {
-                pc += 1;
+                *pc += 1;
                 continue 'vm_loop;
             };
         }
@@ -230,9 +264,7 @@ fn main() {
                 };
             }
 
-            /*
-            
-            */
+            _ => todo!()
         }
 
         proceed!();
