@@ -26,7 +26,6 @@ mod vm {
         HaltVM,
 
         Save,
-        Copy,
 
         Add,
         Subtract,
@@ -78,26 +77,30 @@ fn main() {
 
     let mut closures: HashMap<AddressType, Vec<Command>> = HashMap::new();
 
-    let main = vec![
-        Command {
-            kind: CommandKind::Save,
-            args: vec![
-                Value::Address(0),
-                Value::Number(4.)
-            ]
-        },
-        Command {
-            kind: CommandKind::Multiply,
-            args: vec![
-                Value::Address(0),
-                Value::Number(4.)
-            ]
-        },
+    let cycle = vec![
         Command {
             kind: CommandKind::Add,
             args: vec![
                 Value::Address(0),
-                Value::Number(4.)
+                Value::Number(1.)
+            ]
+        },
+        Command {
+            kind: CommandKind::GreaterThanOrEqual,
+            args: vec![
+                Value::Address(2),
+                Value::Address(0),
+                Value::Address(1)
+            ]
+        }
+    ];
+
+    let main = vec![
+        Command {
+            kind: CommandKind::Save,
+            args: vec![
+                Value::Address(1),
+                Value::Number(1000.)
             ]
         },
     ];
@@ -108,7 +111,7 @@ fn main() {
         Routine::new(0)
     ];
 
-    let mut registers = [vm::Value::Nil; vm::REGISTER_COUNT];
+    let mut registers = [Value::Nil; REGISTER_COUNT];
 
     'vm_loop: while let Some(routine) = routines.last_mut() {
         let pc = &mut routine.pc;
@@ -116,7 +119,7 @@ fn main() {
         let command = if let Some(command) = closure.get(*pc) {
             command
         } else {
-            // no more commands to execute in this routine
+            // no more commands left in this routine
             routines.pop();
             continue 'vm_loop;
         };
@@ -145,6 +148,37 @@ fn main() {
             };
         }
 
+        macro_rules! fetch_value {
+            ($addr:expr, $variant:path, $err_msg:expr) => {
+                if let $variant(value) = registers[$addr] {
+                    value
+                } else {
+                    error!($err_msg);
+                    proceed!();
+                }
+            };
+        }
+
+        macro_rules! fetch_value_and_ptr {
+            ($addr:expr, $variant:path, $err_msg:expr) => {
+                if let $variant(value) = registers[$addr] {
+                    (&mut registers[$addr], value)
+                } else {
+                    error!($err_msg);
+                    proceed!();
+                }
+            };
+        }
+
+        macro_rules! check_address {
+            ($addr:expr, $err_msg:expr) => {
+                if $addr >= REGISTER_COUNT {
+                    error!($err_msg);
+                    proceed!();
+                }
+            };
+        }
+
         match command.kind {
             CommandKind::Dismiss => {}
 
@@ -153,37 +187,37 @@ fn main() {
             }
 
             CommandKind::Save => {
-                let dest = command_arg!(0, vm::Value::Address, "dest is not an Address");
+                let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
                 let dest = *dest as usize;
 
-                let value = command_arg!(1, vm::Value::Number, "value is not a Number");
+                check_address!(dest, "`dest` is out of bounds");
 
-                if dest >= vm::REGISTER_COUNT {
-                    error!("dest is out of bounds");
-                    proceed!();
+                let value = if let Some(value) = command.args.get(1) {
+                    match value {
+                        Value::Number(value) => *value,
+
+                        Value::Address(addr) => {
+                            let addr = *addr as usize;
+                            check_address!(addr, "value address is out of bounds");
+                            if let Value::Number(value) = registers[addr] {
+                                value
+                            } else {
+                                error!("specified register's value is not a Number");
+                                proceed!();
+                            }
+                        }
+
+                        _ => {
+                            error!("invalid value type");
+                            proceed!();
+                        }
+                    }
                 } else {
-                    registers[dest] = vm::Value::Number(*value);
-                }
-            }
-
-            CommandKind::Copy => {
-                let r1 = command_arg!(0, vm::Value::Address, "dest is not an Address");
-                let dest = *r1 as usize;
-
-                if dest >= vm::REGISTER_COUNT {
-                    error!("dest is out of bounds");
+                    error!("missing value");
                     proceed!();
-                }
-
-                let r2 = command_arg!(1, vm::Value::Address, "src is not an Address");
-                let src = *r2 as usize;
-
-                if src >= vm::REGISTER_COUNT {
-                    error!("src is out of bounds");
-                    proceed!();
-                }
+                };
                 
-                registers[dest] = registers[src];
+                registers[dest] = Value::Number(value);
             }
 
             CommandKind::Add |
@@ -192,45 +226,147 @@ fn main() {
             CommandKind::Divide |
             CommandKind::IntDivide |
             CommandKind::Modulo |
-            CommandKind::Power |
+            CommandKind::Power => {
+                let src = command_arg!(0, Value::Address, "src is not an Address");
+                let src = *src as usize;
+
+                check_address!(src, "`src` is out of bounds");
+
+                /* let right = if let Value::Number(value) = registers[src] {
+                    value
+                } else {
+                    error!("src's value is not a Number");
+                    proceed!();
+                }; */
+
+                let value = if let Some(value) = command.args.get(1) {
+                    match value {
+                        Value::Number(value) => *value,
+
+                        Value::Address(addr) => {
+                            let addr = *addr as usize;
+                            check_address!(addr, "value address is out of bounds");
+                            if let Value::Number(value) = registers[addr] {
+                                value
+                            } else {
+                                error!("specified register's value is not a Number");
+                                proceed!();
+                            }
+                        }
+
+                        _ => {
+                            error!("invalid value type");
+                            proceed!();
+                        }
+                    }
+                } else {
+                    error!("missing value");
+                    proceed!();
+                };
+
+                let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
+                let dest = *dest as usize;
+
+                check_address!(dest, "`dest` is out of bounds");
+                
+                let (dest, left) = if let Value::Number(value) = registers[dest] {
+                    (&mut registers[dest], value)
+                } else {
+                    error!("`dest`'s value is not a Number");
+                    proceed!();
+                };
+
+                *dest = match command.kind {
+                    CommandKind::Add => Value::Number(left + value),
+                    CommandKind::Subtract => Value::Number(left - value),
+                    CommandKind::Multiply => Value::Number(left * value),
+                    CommandKind::Divide => Value::Number(left / value),
+                    CommandKind::IntDivide => Value::Number((left / value).floor()),
+                    CommandKind::Modulo => Value::Number(left % value),
+                    CommandKind::Power => Value::Number(left.powf(value)),
+                    CommandKind::Equal => Value::Boolean(left == value),
+                    CommandKind::NotEqual => Value::Boolean(left != value),
+                    CommandKind::GreaterThan => Value::Boolean(left > value),
+                    CommandKind::GreaterThanOrEqual => Value::Boolean(left >= value),
+                    CommandKind::LessThan => Value::Boolean(left < value),
+                    CommandKind::LessThanOrEqual => Value::Boolean(left <= value),
+                    _ => unreachable!()
+                };
+            }
+
             CommandKind::Equal |
             CommandKind::NotEqual |
             CommandKind::GreaterThan |
             CommandKind::GreaterThanOrEqual |
             CommandKind::LessThan |
             CommandKind::LessThanOrEqual => {
-                let dest = command_arg!(0, vm::Value::Address, "dest is not an Address");
-                let dest = *dest as usize;
+                let left = if let Some(value) = command.args.get(1) {
+                    match value {
+                        Value::Number(value) => *value,
 
-                let right = command_arg!(1, vm::Value::Number, "value is not a Number");
-                let right = *right;
+                        Value::Address(addr) => {
+                            let addr = *addr as usize;
+                            check_address!(addr, "left value address is out of bounds");
+                            if let Value::Number(value) = registers[addr] {
+                                value
+                            } else {
+                                error!("specified register's value is not a Number");
+                                proceed!();
+                            }
+                        }
 
-                if dest >= vm::REGISTER_COUNT {
-                    error!("dest is out of bounds");
-                    proceed!();
-                }
-                
-                let (dest, left) = if let vm::Value::Number(value) = registers[dest] {
-                    (&mut registers[dest], value)
+                        _ => {
+                            error!("invalid value type");
+                            proceed!();
+                        }
+                    }
                 } else {
-                    error!("dest's value is not a Number");
+                    error!("missing value");
                     proceed!();
                 };
 
+                let right = if let Some(value) = command.args.get(2) {
+                    match value {
+                        Value::Number(value) => *value,
+
+                        Value::Address(addr) => {
+                            let addr = *addr as usize;
+                            check_address!(addr, "right's address is out of bounds");
+                            if let Value::Number(value) = registers[addr] {
+                                value
+                            } else {
+                                error!("specified register's value is not a Number");
+                                proceed!();
+                            }
+                        }
+
+                        _ => {
+                            error!("invalid value type");
+                            proceed!();
+                        }
+                    }
+                } else {
+                    error!("missing value");
+                    proceed!();
+                };
+
+                let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
+                let dest = *dest as usize;
+
+                if dest >= REGISTER_COUNT {
+                    error!("`dest` is out of bounds");
+                    proceed!();
+                }
+
+                let dest = &mut registers[dest];
+
                 *dest = match command.kind {
-                    CommandKind::Add => vm::Value::Number(left + right),
-                    CommandKind::Subtract => vm::Value::Number(left - right),
-                    CommandKind::Multiply => vm::Value::Number(left * right),
-                    CommandKind::Divide => vm::Value::Number(left / right),
-                    CommandKind::IntDivide => vm::Value::Number((left / right).floor()),
-                    CommandKind::Modulo => vm::Value::Number(left % right),
-                    CommandKind::Power => vm::Value::Number(left.powf(right)),
-                    CommandKind::Equal => vm::Value::Boolean(left == right),
-                    CommandKind::NotEqual => vm::Value::Boolean(left != right),
-                    CommandKind::GreaterThan => vm::Value::Boolean(left > right),
-                    CommandKind::GreaterThanOrEqual => vm::Value::Boolean(left >= right),
-                    CommandKind::LessThan => vm::Value::Boolean(left < right),
-                    CommandKind::LessThanOrEqual => vm::Value::Boolean(left <= right),
+                    CommandKind::Equal => Value::Boolean(left == right),
+                    CommandKind::NotEqual => Value::Boolean(left != right),
+                    CommandKind::GreaterThan => Value::Boolean(left > right),
+                    CommandKind::GreaterThanOrEqual => Value::Boolean(left >= right),
+                    CommandKind::LessThan => Value::Boolean(left < right),
+                    CommandKind::LessThanOrEqual => Value::Boolean(left <= right),
                     _ => unreachable!()
                 };
             }
@@ -238,28 +374,24 @@ fn main() {
             CommandKind::LogicalAnd |
             CommandKind::LogicalOr |
             CommandKind::LogicalNot => {
-                let dest = command_arg!(0, vm::Value::Address, "dest is not an Address");
+                let src = command_arg!(1, Value::Address, "`src` is not an Address");
+                let src = *src as usize;
+
+                check_address!(src, "`src` is out of bounds");
+                
+                let right = fetch_value!(src, Value::Boolean, "`src`'s value is not a Boolean");
+
+                let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
                 let dest = *dest as usize;
 
-                let right = command_arg!(1, vm::Value::Boolean, "value is not a Boolean");
-                let right = *right;
-
-                if dest >= vm::REGISTER_COUNT {
-                    error!("dest is out of bounds");
-                    proceed!();
-                }
+                check_address!(dest, "`dest` is out of bounds");
                 
-                let (dest, left) = if let vm::Value::Boolean(value) = registers[dest] {
-                    (&mut registers[dest], value)
-                } else {
-                    error!("dest's value is not a Boolean");
-                    proceed!();
-                };
+                let (dest, left) = fetch_value_and_ptr!(dest, Value::Boolean, "`dest`'s value is not a Boolean");
 
                 *dest = match command.kind {
-                    CommandKind::LogicalAnd => vm::Value::Boolean(left && right),
-                    CommandKind::LogicalOr => vm::Value::Boolean(left || right),
-                    CommandKind::LogicalNot => vm::Value::Boolean(!right),
+                    CommandKind::LogicalAnd => Value::Boolean(left && right),
+                    CommandKind::LogicalOr => Value::Boolean(left || right),
+                    CommandKind::LogicalNot => Value::Boolean(!right),
                     _ => unreachable!()
                 };
             }
