@@ -25,7 +25,7 @@ mod vm {
         Dismiss,
         HaltVM,
 
-        Save,
+        Store,
 
         Add,
         Subtract,
@@ -76,12 +76,31 @@ fn main() {
     use vm::*;
 
     let mut closures: HashMap<AddressType, Vec<Command>> = HashMap::new();
+    
+    // simple loop:
+    /*
+    let main = vec![
+        Command {
+            kind: CommandKind::Store,
+            args: vec![
+                Value::Address(0),
+                Value::Number(1000.)
+            ]
+        },
+        Command {
+            kind: CommandKind::Store,
+            args: vec![
+                Value::Address(1),
+                Value::Number(0.)
+            ]
+        },
+    ];
 
     let cycle = vec![
         Command {
             kind: CommandKind::Add,
             args: vec![
-                Value::Address(0),
+                Value::Address(1),
                 Value::Number(1.)
             ]
         },
@@ -94,33 +113,56 @@ fn main() {
             ]
         }
     ];
+    */
 
     let main = vec![
         Command {
-            kind: CommandKind::Save,
+            kind: CommandKind::Store,
+            args: vec![
+                Value::Address(0),
+                Value::Number(4.)
+            ]
+        },
+
+        Command {
+            kind: CommandKind::Store,
             args: vec![
                 Value::Address(1),
-                Value::Number(1000.)
+                Value::Number(4.)
+            ]
+        },
+        Command {
+            kind: CommandKind::Multiply,
+            args: vec![
+                Value::Address(1),
+                Value::Address(0)
+            ]
+        },
+        Command {
+            kind: CommandKind::Add,
+            args: vec![
+                Value::Address(1),
+                Value::Address(0)
             ]
         },
     ];
-
+            
     closures.insert(0, main);
 
-    let mut routines: Vec<Routine> = vec![
+    let mut routine_stack: Vec<Routine> = vec![
         Routine::new(0)
     ];
 
     let mut registers = [Value::Nil; REGISTER_COUNT];
 
-    'vm_loop: while let Some(routine) = routines.last_mut() {
+    'vm_loop: while let Some(routine) = routine_stack.last_mut() {
         let pc = &mut routine.pc;
         let closure = closures.get(&routine.closure_addr).expect("invalid routine's closure address");
         let command = if let Some(command) = closure.get(*pc) {
             command
         } else {
             // no more commands left in this routine
-            routines.pop();
+            routine_stack.pop();
             continue 'vm_loop;
         };
 
@@ -186,38 +228,14 @@ fn main() {
                 break 'vm_loop;
             }
 
-            CommandKind::Save => {
+            CommandKind::Store => {
                 let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
                 let dest = *dest as usize;
+                check_address!(dest, "`dest` register is out of bounds");
 
-                check_address!(dest, "`dest` is out of bounds");
-
-                let value = if let Some(value) = command.args.get(1) {
-                    match value {
-                        Value::Number(value) => *value,
-
-                        Value::Address(addr) => {
-                            let addr = *addr as usize;
-                            check_address!(addr, "value address is out of bounds");
-                            if let Value::Number(value) = registers[addr] {
-                                value
-                            } else {
-                                error!("specified register's value is not a Number");
-                                proceed!();
-                            }
-                        }
-
-                        _ => {
-                            error!("invalid value type");
-                            proceed!();
-                        }
-                    }
-                } else {
-                    error!("missing value");
-                    proceed!();
-                };
+                let value = command_arg!(1, Value::Number, "`src` is not a Number");
                 
-                registers[dest] = Value::Number(value);
+                registers[dest] = Value::Number(*value);
             }
 
             CommandKind::Add |
@@ -227,52 +245,26 @@ fn main() {
             CommandKind::IntDivide |
             CommandKind::Modulo |
             CommandKind::Power => {
-                let src = command_arg!(0, Value::Address, "src is not an Address");
+                let src = command_arg!(1, Value::Address, "`src` is not an Address");
                 let src = *src as usize;
+                check_address!(src, "`src` register is out of bounds");
 
-                check_address!(src, "`src` is out of bounds");
-
-                /* let right = if let Value::Number(value) = registers[src] {
+                let value: f32 = if let Value::Number(value) = registers[src] {
                     value
                 } else {
-                    error!("src's value is not a Number");
-                    proceed!();
-                }; */
-
-                let value = if let Some(value) = command.args.get(1) {
-                    match value {
-                        Value::Number(value) => *value,
-
-                        Value::Address(addr) => {
-                            let addr = *addr as usize;
-                            check_address!(addr, "value address is out of bounds");
-                            if let Value::Number(value) = registers[addr] {
-                                value
-                            } else {
-                                error!("specified register's value is not a Number");
-                                proceed!();
-                            }
-                        }
-
-                        _ => {
-                            error!("invalid value type");
-                            proceed!();
-                        }
-                    }
-                } else {
-                    error!("missing value");
+                    error!("specified register's value is not a Number");
                     proceed!();
                 };
 
                 let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
                 let dest = *dest as usize;
 
-                check_address!(dest, "`dest` is out of bounds");
+                check_address!(dest, "`dest` register is out of bounds");
                 
                 let (dest, left) = if let Value::Number(value) = registers[dest] {
                     (&mut registers[dest], value)
                 } else {
-                    error!("`dest`'s value is not a Number");
+                    error!("`dest` register's value is not a Number");
                     proceed!();
                 };
 
@@ -354,7 +346,7 @@ fn main() {
                 let dest = *dest as usize;
 
                 if dest >= REGISTER_COUNT {
-                    error!("`dest` is out of bounds");
+                    error!("`dest` register is out of bounds");
                     proceed!();
                 }
 
@@ -377,16 +369,16 @@ fn main() {
                 let src = command_arg!(1, Value::Address, "`src` is not an Address");
                 let src = *src as usize;
 
-                check_address!(src, "`src` is out of bounds");
+                check_address!(src, "`src` register is out of bounds");
                 
-                let right = fetch_value!(src, Value::Boolean, "`src`'s value is not a Boolean");
+                let right = fetch_value!(src, Value::Boolean, "`src` register's value is not a Boolean");
 
                 let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
                 let dest = *dest as usize;
 
-                check_address!(dest, "`dest` is out of bounds");
+                check_address!(dest, "`dest` register is out of bounds");
                 
-                let (dest, left) = fetch_value_and_ptr!(dest, Value::Boolean, "`dest`'s value is not a Boolean");
+                let (dest, left) = fetch_value_and_ptr!(dest, Value::Boolean, "`dest` register's value is not a Boolean");
 
                 *dest = match command.kind {
                     CommandKind::LogicalAnd => Value::Boolean(left && right),
@@ -402,7 +394,7 @@ fn main() {
         proceed!();
     }
 
-    println!("register 0 = {:?}", registers[0]);
+    println!("register 1 = {:?}", registers[1]);
 }
 
 /*
