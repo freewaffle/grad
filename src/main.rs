@@ -7,63 +7,171 @@ use std::collections::HashMap;
 mod vm {
     pub const REGISTER_COUNT: usize = 128;
 
-    pub type AddressType = u8;
+    pub mod ptr {
+        pub type Register = u8;
+        pub type Instruction = u16;
+    }
 
     #[derive(Clone, Copy, Debug)]
     pub enum Value {
         Nil,
-
         Number(f32),
         Boolean(bool),
-
-        Address(AddressType)
     }
 
     #[derive(Clone, Copy, Debug)]
     #[repr(u8)]
-    pub enum CommandKind {
+    pub enum Command {
         Dismiss,
         HaltVM,
 
-        Store,
+        /// Stores value `value` into register `dest`.
+        Store {
+            dest: ptr::Register,
+            value: Value
+        },
 
-        Add,
-        Subtract,
-        Multiply,
-        Divide,
-        IntDivide,
-        Modulo,
-        Power,
+        /// Computes `dest + src` and stores result into `dest`.
+        Add {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
+        /// Computes `dest - src` and stores result into `dest`.
+        Subtract {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
+        /// Computes `dest * src` and stores result into `dest`.
+        Multiply {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
+        /// Computes `dest / src` and stores result into `dest`.
+        Divide {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
+        /// Computes `dest // src` and stores result into `dest`.
+        IntDivide {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
+        /// Computes `dest % src` and stores result into `dest`.
+        Modulo {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
+        /// Computes `dest ^ src` and stores result into `dest`.
+        Power {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
 
-        LogicalAnd,
-        LogicalOr,
-        LogicalNot,
+        /// Computes `dest && src` and stores result into `dest`.
+        LogicalAnd {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
+        /// Computes `dest || src` and stores result into `dest`.
+        LogicalOr {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
+        /// Computes `!src` and stores result into `dest`.
+        LogicalNot {
+            dest: ptr::Register,
+            src: ptr::Register
+        },
 
-        Equal,
-        NotEqual,
-        GreaterThan,
-        GreaterThanOrEqual,
-        LessThan,
-        LessThanOrEqual,
+        /// Computes `left == right` and stores result into `dest`.
+        Equal {
+            dest: ptr::Register,
+            left: ptr::Register,
+            right: ptr::Register
+        },
+        /// Computes `left != right` and stores result into `dest`.
+        NotEqual {
+            dest: ptr::Register,
+            left: ptr::Register,
+            right: ptr::Register
+        },
+        /// Computes `left > right` and stores result into `dest`.
+        GreaterThan {
+            dest: ptr::Register,
+            left: ptr::Register,
+            right: ptr::Register
+        },
+        /// Computes `left >= right` and stores result into `dest`.
+        GreaterThanOrEqual {
+            dest: ptr::Register,
+            left: ptr::Register,
+            right: ptr::Register
+        },
+        /// Computes `left < right` and stores result into `dest`.
+        LessThan {
+            dest: ptr::Register,
+            left: ptr::Register,
+            right: ptr::Register
+        },
+        /// Computes `left <= right` and stores result into `dest`.
+        LessThanOrEqual {
+            dest: ptr::Register,
+            left: ptr::Register,
+            right: ptr::Register
+        },
 
-        Compare,
-        Jump,
+        /// Skips the next instruction if `register` is false,
+        /// otherwise does nothing.
+        Compare {
+            register: ptr::Register
+        },
+        /// Jumps to instruction `dest` in the current closure.
+        Jump {
+            dest: ptr::Instruction
+        },
+        /// Jumps to the beginning of the current closure.
         JumpToBeginning,
+        /// Stops the current closure and returns to the previous one.
         Break,
     }
-    
-    pub struct Command {
-        pub kind: CommandKind,
-        pub args: Vec<Value>
+
+    impl Command {
+        pub fn get_type_str(&self) -> &'static str {
+            match self {
+                Command::Dismiss => "Dismiss",
+                Command::HaltVM => "HaltVM",
+                Command::Store { .. } => "Store",
+                Command::Add { .. } => "Add",
+                Command::Subtract { .. } => "Subtract",
+                Command::Multiply { .. } => "Multiply",
+                Command::Divide { .. } => "Divide",
+                Command::IntDivide { .. } => "IntDivide",
+                Command::Modulo { .. } => "Modulo",
+                Command::Power { .. } => "Power",
+                Command::LogicalAnd { .. } => "LogicalAnd",
+                Command::LogicalOr { .. } => "LogicalOr",
+                Command::LogicalNot { .. } => "LogicalNot",
+                Command::Equal { .. } => "Equal",
+                Command::NotEqual { .. } => "NotEqual",
+                Command::GreaterThan { .. } => "GreaterThan",
+                Command::GreaterThanOrEqual { .. } => "GreaterThanOrEqual",
+                Command::LessThan { .. } => "LessThan",
+                Command::LessThanOrEqual { .. } => "LessThanOrEqual",
+                Command::Compare { .. } => "Compare",
+                Command::Jump { .. } => "Jump",
+                Command::JumpToBeginning => "JumpToBeginning",
+                Command::Break => "Break"
+            }
+        }
     }
 
     pub struct Routine {
-        pub closure_addr: AddressType,
+        pub closure_addr: ptr::Register,
         pub pc: usize
     }
 
     impl Routine {
-        pub fn new(closure_addr: AddressType) -> Self {
+        pub fn new(closure_addr: ptr::Register) -> Self {
             Self {
                 closure_addr,
                 pc: 0
@@ -75,7 +183,7 @@ mod vm {
 fn main() {
     use vm::*;
 
-    let mut closures: HashMap<AddressType, Vec<Command>> = HashMap::new();
+    let mut closures: HashMap<ptr::Register, Vec<Command>> = HashMap::new();
     
     // simple loop:
     /*
@@ -116,35 +224,10 @@ fn main() {
     */
 
     let main = vec![
-        Command {
-            kind: CommandKind::Store,
-            args: vec![
-                Value::Address(0),
-                Value::Number(4.)
-            ]
-        },
-
-        Command {
-            kind: CommandKind::Store,
-            args: vec![
-                Value::Address(1),
-                Value::Number(4.)
-            ]
-        },
-        Command {
-            kind: CommandKind::Multiply,
-            args: vec![
-                Value::Address(1),
-                Value::Address(0)
-            ]
-        },
-        Command {
-            kind: CommandKind::Add,
-            args: vec![
-                Value::Address(1),
-                Value::Address(0)
-            ]
-        },
+        Command::Store { dest: 0, value: Value::Number(4.) },
+        Command::Store { dest: 1, value: Value::Number(4.) },
+        Command::Multiply { dest: 1, src: 0 },
+        Command::Add { dest: 1, src: 0 }
     ];
             
     closures.insert(0, main);
@@ -168,7 +251,7 @@ fn main() {
 
         macro_rules! error {
             ($fmt:expr) => {
-                eprintln!("GVM:{}:{:?}: {}", pc, command.kind, $fmt);
+                eprintln!("GVM:{}:{:?}: {}", pc, command.get_type_str(), $fmt);
             };
         }
 
@@ -176,17 +259,6 @@ fn main() {
             () => {
                 *pc += 1;
                 continue 'vm_loop;
-            };
-        }
-
-        macro_rules! command_arg {
-            ($idx:expr, $variant:path, $err_msg:expr) => {
-                if let Some($variant(value)) = command.args.get($idx) {
-                    value
-                } else {
-                    error!($err_msg);
-                    proceed!();
-                }
             };
         }
 
@@ -221,31 +293,26 @@ fn main() {
             };
         }
 
-        match command.kind {
-            CommandKind::Dismiss => {}
+        match command {
+            Command::Dismiss => {}
 
-            CommandKind::HaltVM => {
+            Command::HaltVM => {
                 break 'vm_loop;
             }
 
-            CommandKind::Store => {
-                let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
+            Command::Store { dest, value } => {
                 let dest = *dest as usize;
                 check_address!(dest, "`dest` register is out of bounds");
-
-                let value = command_arg!(1, Value::Number, "`src` is not a Number");
-                
-                registers[dest] = Value::Number(*value);
+                registers[dest] = *value;
             }
 
-            CommandKind::Add |
-            CommandKind::Subtract |
-            CommandKind::Multiply |
-            CommandKind::Divide |
-            CommandKind::IntDivide |
-            CommandKind::Modulo |
-            CommandKind::Power => {
-                let src = command_arg!(1, Value::Address, "`src` is not an Address");
+            Command::Add { dest, src } |
+            Command::Subtract { dest, src } |
+            Command::Multiply { dest, src } |
+            Command::Divide { dest, src } |
+            Command::IntDivide { dest, src } |
+            Command::Modulo { dest, src } |
+            Command::Power { dest, src } => {
                 let src = *src as usize;
                 check_address!(src, "`src` register is out of bounds");
 
@@ -256,136 +323,95 @@ fn main() {
                     proceed!();
                 };
 
-                let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
                 let dest = *dest as usize;
-
                 check_address!(dest, "`dest` register is out of bounds");
                 
-                let (dest, left) = if let Value::Number(value) = registers[dest] {
+                let (dest, dest_value) = if let Value::Number(value) = registers[dest] {
                     (&mut registers[dest], value)
                 } else {
                     error!("`dest` register's value is not a Number");
                     proceed!();
                 };
 
-                *dest = match command.kind {
-                    CommandKind::Add => Value::Number(left + value),
-                    CommandKind::Subtract => Value::Number(left - value),
-                    CommandKind::Multiply => Value::Number(left * value),
-                    CommandKind::Divide => Value::Number(left / value),
-                    CommandKind::IntDivide => Value::Number((left / value).floor()),
-                    CommandKind::Modulo => Value::Number(left % value),
-                    CommandKind::Power => Value::Number(left.powf(value)),
-                    CommandKind::Equal => Value::Boolean(left == value),
-                    CommandKind::NotEqual => Value::Boolean(left != value),
-                    CommandKind::GreaterThan => Value::Boolean(left > value),
-                    CommandKind::GreaterThanOrEqual => Value::Boolean(left >= value),
-                    CommandKind::LessThan => Value::Boolean(left < value),
-                    CommandKind::LessThanOrEqual => Value::Boolean(left <= value),
+                *dest = match command {
+                    Command::Add { .. } => Value::Number(dest_value + value),
+                    Command::Subtract { .. } => Value::Number(dest_value - value),
+                    Command::Multiply { .. } => Value::Number(dest_value * value),
+                    Command::Divide { .. } => Value::Number(dest_value / value),
+                    Command::IntDivide { .. } => Value::Number((dest_value / value).floor()),
+                    Command::Modulo { .. } => Value::Number(dest_value % value),
+                    Command::Power { .. } => Value::Number(dest_value.powf(value)),
                     _ => unreachable!()
                 };
             }
 
-            CommandKind::Equal |
-            CommandKind::NotEqual |
-            CommandKind::GreaterThan |
-            CommandKind::GreaterThanOrEqual |
-            CommandKind::LessThan |
-            CommandKind::LessThanOrEqual => {
-                let left = if let Some(value) = command.args.get(1) {
-                    match value {
-                        Value::Number(value) => *value,
+            Command::Equal { dest, left, right } |
+            Command::NotEqual { dest, left, right } |
+            Command::GreaterThan { dest, left, right } |
+            Command::GreaterThanOrEqual { dest, left, right } |
+            Command::LessThan { dest, left, right } |
+            Command::LessThanOrEqual { dest, left, right } => {
+                let left = *left as usize;
+                check_address!(left, "`left` register is out of bounds");
 
-                        Value::Address(addr) => {
-                            let addr = *addr as usize;
-                            check_address!(addr, "left value address is out of bounds");
-                            if let Value::Number(value) = registers[addr] {
-                                value
-                            } else {
-                                error!("specified register's value is not a Number");
-                                proceed!();
-                            }
-                        }
-
-                        _ => {
-                            error!("invalid value type");
-                            proceed!();
-                        }
-                    }
+                let left: f32 = if let Value::Number(value) = registers[left] {
+                    value
                 } else {
-                    error!("missing value");
+                    error!("`left` register's value is not a Number");
                     proceed!();
                 };
 
-                let right = if let Some(value) = command.args.get(2) {
-                    match value {
-                        Value::Number(value) => *value,
+                let right = *right as usize;
+                check_address!(right, "`right` register is out of bounds");
 
-                        Value::Address(addr) => {
-                            let addr = *addr as usize;
-                            check_address!(addr, "right's address is out of bounds");
-                            if let Value::Number(value) = registers[addr] {
-                                value
-                            } else {
-                                error!("specified register's value is not a Number");
-                                proceed!();
-                            }
-                        }
-
-                        _ => {
-                            error!("invalid value type");
-                            proceed!();
-                        }
-                    }
+                let right: f32 = if let Value::Number(value) = registers[right] {
+                    value
                 } else {
-                    error!("missing value");
+                    error!("`right` register's value is not a Number");
                     proceed!();
                 };
 
-                let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
                 let dest = *dest as usize;
-
-                if dest >= REGISTER_COUNT {
-                    error!("`dest` register is out of bounds");
-                    proceed!();
-                }
-
+                check_address!(dest, "`dest` register is out of bounds");
                 let dest = &mut registers[dest];
 
-                *dest = match command.kind {
-                    CommandKind::Equal => Value::Boolean(left == right),
-                    CommandKind::NotEqual => Value::Boolean(left != right),
-                    CommandKind::GreaterThan => Value::Boolean(left > right),
-                    CommandKind::GreaterThanOrEqual => Value::Boolean(left >= right),
-                    CommandKind::LessThan => Value::Boolean(left < right),
-                    CommandKind::LessThanOrEqual => Value::Boolean(left <= right),
+                *dest = match command {
+                    Command::Equal { .. } => Value::Boolean(left == right),
+                    Command::NotEqual { .. } => Value::Boolean(left != right),
+                    Command::GreaterThan { .. } => Value::Boolean(left > right),
+                    Command::GreaterThanOrEqual { .. } => Value::Boolean(left >= right),
+                    Command::LessThan { .. } => Value::Boolean(left < right),
+                    Command::LessThanOrEqual { .. } => Value::Boolean(left <= right),
                     _ => unreachable!()
                 };
             }
 
-            CommandKind::LogicalAnd |
-            CommandKind::LogicalOr |
-            CommandKind::LogicalNot => {
-                let src = command_arg!(1, Value::Address, "`src` is not an Address");
+            Command::LogicalAnd { dest, src } |
+            Command::LogicalOr { dest, src } => {
                 let src = *src as usize;
-
                 check_address!(src, "`src` register is out of bounds");
-                
-                let right = fetch_value!(src, Value::Boolean, "`src` register's value is not a Boolean");
+                let src = fetch_value!(src, Value::Boolean, "`src` register's value is not a Boolean");
 
-                let dest = command_arg!(0, Value::Address, "`dest` is not an Address");
                 let dest = *dest as usize;
-
                 check_address!(dest, "`dest` register is out of bounds");
-                
-                let (dest, left) = fetch_value_and_ptr!(dest, Value::Boolean, "`dest` register's value is not a Boolean");
+                let (dest, dest_value) = fetch_value_and_ptr!(dest, Value::Boolean, "`dest` register's value is not a Boolean");
 
-                *dest = match command.kind {
-                    CommandKind::LogicalAnd => Value::Boolean(left && right),
-                    CommandKind::LogicalOr => Value::Boolean(left || right),
-                    CommandKind::LogicalNot => Value::Boolean(!right),
+                *dest = match command {
+                    Command::LogicalAnd { .. } => Value::Boolean(dest_value && src),
+                    Command::LogicalOr { .. } => Value::Boolean(dest_value || src),
                     _ => unreachable!()
                 };
+            }
+
+            Command::LogicalNot { dest, src } => {
+                let src = *src as usize;
+                check_address!(src, "`src` register is out of bounds");
+                let src = fetch_value!(src, Value::Boolean, "`src` register's value is not a Boolean");
+
+                let dest = *dest as usize;
+                check_address!(dest, "`dest` register is out of bounds");
+                
+                registers[dest] = Value::Boolean(!src);
             }
 
             _ => todo!()
