@@ -246,7 +246,7 @@ fn main() {
                 };
             }
 
-            macro_rules! check_address {
+            macro_rules! check_register_ptr {
                 ($addr:expr, $err_msg:expr) => {
                     if $addr >= REGISTER_COUNT {
                         error!($err_msg);
@@ -274,10 +274,10 @@ fn main() {
                 Command::Modulo { dest, src } |
                 Command::Power { dest, src } => {
                     let src = *src as usize;
-                    check_address!(src, "`src` register is out of bounds");
+                    check_register_ptr!(src, "`src` register is out of bounds");
 
                     let dest = *dest as usize;
-                    check_address!(dest, "`dest` register is out of bounds");
+                    check_register_ptr!(dest, "`dest` register is out of bounds");
                 }
 
                 Command::Equal { dest, left, right } |
@@ -287,30 +287,30 @@ fn main() {
                 Command::LessThan { dest, left, right } |
                 Command::LessThanOrEqual { dest, left, right } => {
                     let left = *left as usize;
-                    check_address!(left, "`left` register is out of bounds");
+                    check_register_ptr!(left, "`left` register is out of bounds");
 
                     let right = *right as usize;
-                    check_address!(right, "`right` register is out of bounds");
+                    check_register_ptr!(right, "`right` register is out of bounds");
 
                     let dest = *dest as usize;
-                    check_address!(dest, "`dest` register is out of bounds");
+                    check_register_ptr!(dest, "`dest` register is out of bounds");
                 }
 
                 Command::LogicalAnd { dest, src } |
                 Command::LogicalOr { dest, src } => {
                     let src = *src as usize;
-                    check_address!(src, "`src` register is out of bounds");
+                    check_register_ptr!(src, "`src` register is out of bounds");
 
                     let dest = *dest as usize;
-                    check_address!(dest, "`dest` register is out of bounds");
+                    check_register_ptr!(dest, "`dest` register is out of bounds");
                 }
 
                 Command::LogicalNot { dest, src } => {
                     let src = *src as usize;
-                    check_address!(src, "`src` register is out of bounds");
+                    check_register_ptr!(src, "`src` register is out of bounds");
 
                     let dest = *dest as usize;
-                    check_address!(dest, "`dest` register is out of bounds");
+                    check_register_ptr!(dest, "`dest` register is out of bounds");
                 }
 
                 _ => todo!()
