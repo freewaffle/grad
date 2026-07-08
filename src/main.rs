@@ -8,6 +8,7 @@ mod vm {
     pub mod ptr {
         pub type Register = u8;
         pub type Instruction = u16;
+        pub type Routine = u16;
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -15,6 +16,11 @@ mod vm {
         Nil,
         Number(f32),
         Boolean(bool),
+    }
+
+    pub enum RoutineArgument {
+        Reference(ptr::Register),
+        Literal(Value)
     }
 
     #[repr(u8)]
@@ -130,6 +136,10 @@ mod vm {
         JumpToBeginning,
         /// Stops the current closure and returns to the previous one.
         Break,
+        Call {
+            routine: ptr::Routine,
+            args: Vec<RoutineArgument>
+        }
     }
 
     impl Command {
@@ -157,7 +167,8 @@ mod vm {
                 Command::Compare { .. } => "Compare",
                 Command::Jump { .. } => "Jump",
                 Command::JumpToBeginning => "JumpToBeginning",
-                Command::Break => "Break"
+                Command::Break => "Break",
+                Command::Call { .. } => "Call"
             }
         }
     }
