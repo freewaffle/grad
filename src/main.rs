@@ -19,7 +19,6 @@ mod vm {
         Boolean(bool),
     }
 
-    #[derive(Clone, Copy, Debug)]
     #[repr(u8)]
     pub enum Command {
         Dismiss,
