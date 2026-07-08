@@ -237,9 +237,95 @@ fn main() {
 
     let mut registers = [Value::Nil; REGISTER_COUNT];
 
+    let mut code_ok = true;
+
+    for (cc, closure) in &closures {
+        for (pc, command) in closure.iter().enumerate() {
+            macro_rules! error {
+                ($fmt:expr) => {
+                    eprintln!("GVM: c{cc}:p{pc}:{}: {}", command.get_type_str(), $fmt);
+                    code_ok = false;
+                };
+            }
+
+            macro_rules! check_address {
+                ($addr:expr, $err_msg:expr) => {
+                    if $addr >= REGISTER_COUNT {
+                        error!($err_msg);
+                    }
+                };
+            }
+
+            match command {
+                Command::Dismiss => {}
+
+                Command::HaltVM => {}
+
+                Command::Store { dest, .. } => {
+                    let dest = *dest as usize;
+                    if dest >= REGISTER_COUNT {
+                        error!("`dest` register is out of bounds");
+                    }
+                }
+
+                Command::Add { dest, src } |
+                Command::Subtract { dest, src } |
+                Command::Multiply { dest, src } |
+                Command::Divide { dest, src } |
+                Command::IntDivide { dest, src } |
+                Command::Modulo { dest, src } |
+                Command::Power { dest, src } => {
+                    let src = *src as usize;
+                    check_address!(src, "`src` register is out of bounds");
+
+                    let dest = *dest as usize;
+                    check_address!(dest, "`dest` register is out of bounds");
+                }
+
+                Command::Equal { dest, left, right } |
+                Command::NotEqual { dest, left, right } |
+                Command::GreaterThan { dest, left, right } |
+                Command::GreaterThanOrEqual { dest, left, right } |
+                Command::LessThan { dest, left, right } |
+                Command::LessThanOrEqual { dest, left, right } => {
+                    let left = *left as usize;
+                    check_address!(left, "`left` register is out of bounds");
+
+                    let right = *right as usize;
+                    check_address!(right, "`right` register is out of bounds");
+
+                    let dest = *dest as usize;
+                    check_address!(dest, "`dest` register is out of bounds");
+                }
+
+                Command::LogicalAnd { dest, src } |
+                Command::LogicalOr { dest, src } => {
+                    let src = *src as usize;
+                    check_address!(src, "`src` register is out of bounds");
+
+                    let dest = *dest as usize;
+                    check_address!(dest, "`dest` register is out of bounds");
+                }
+
+                Command::LogicalNot { dest, src } => {
+                    let src = *src as usize;
+                    check_address!(src, "`src` register is out of bounds");
+
+                    let dest = *dest as usize;
+                    check_address!(dest, "`dest` register is out of bounds");
+                }
+
+                _ => todo!()
+            }
+        }
+    }
+
+    if !code_ok { return }
+
     'vm_loop: while let Some(routine) = routine_stack.last_mut() {
         let pc = &mut routine.pc;
-        let closure = closures.get(&routine.closure_addr).expect("invalid routine's closure address");
+        let closure_addr = routine.closure_addr;
+        let closure = closures.get(&closure_addr).expect("invalid routine's closure address");
         let command = if let Some(command) = closure.get(*pc) {
             command
         } else {
@@ -250,7 +336,7 @@ fn main() {
 
         macro_rules! error {
             ($fmt:expr) => {
-                eprintln!("GVM:{}:{:?}: {}", pc, command.get_type_str(), $fmt);
+                eprintln!("GVM: c{closure_addr}:p{pc}:{}: {}", command.get_type_str(), $fmt);
             };
         }
 
@@ -283,15 +369,6 @@ fn main() {
             };
         }
 
-        macro_rules! check_address {
-            ($addr:expr, $err_msg:expr) => {
-                if $addr >= REGISTER_COUNT {
-                    error!($err_msg);
-                    proceed!();
-                }
-            };
-        }
-
         match command {
             Command::Dismiss => {}
 
@@ -300,9 +377,7 @@ fn main() {
             }
 
             Command::Store { dest, value } => {
-                let dest = *dest as usize;
-                check_address!(dest, "`dest` register is out of bounds");
-                registers[dest] = *value;
+                registers[*dest as usize] = *value;
             }
 
             Command::Add { dest, src } |
@@ -313,8 +388,6 @@ fn main() {
             Command::Modulo { dest, src } |
             Command::Power { dest, src } => {
                 let src = *src as usize;
-                check_address!(src, "`src` register is out of bounds");
-
                 let value: f32 = if let Value::Number(value) = registers[src] {
                     value
                 } else {
@@ -323,14 +396,7 @@ fn main() {
                 };
 
                 let dest = *dest as usize;
-                check_address!(dest, "`dest` register is out of bounds");
-                
-                let (dest, dest_value) = if let Value::Number(value) = registers[dest] {
-                    (&mut registers[dest], value)
-                } else {
-                    error!("`dest` register's value is not a Number");
-                    proceed!();
-                };
+                let (dest, dest_value) = fetch_value_and_ptr!(dest, Value::Number, "`dest` register's value is not a Number");
 
                 *dest = match command {
                     Command::Add { .. } => Value::Number(dest_value + value),
@@ -351,8 +417,6 @@ fn main() {
             Command::LessThan { dest, left, right } |
             Command::LessThanOrEqual { dest, left, right } => {
                 let left = *left as usize;
-                check_address!(left, "`left` register is out of bounds");
-
                 let left: f32 = if let Value::Number(value) = registers[left] {
                     value
                 } else {
@@ -361,8 +425,6 @@ fn main() {
                 };
 
                 let right = *right as usize;
-                check_address!(right, "`right` register is out of bounds");
-
                 let right: f32 = if let Value::Number(value) = registers[right] {
                     value
                 } else {
@@ -371,7 +433,6 @@ fn main() {
                 };
 
                 let dest = *dest as usize;
-                check_address!(dest, "`dest` register is out of bounds");
                 let dest = &mut registers[dest];
 
                 *dest = match command {
@@ -388,11 +449,9 @@ fn main() {
             Command::LogicalAnd { dest, src } |
             Command::LogicalOr { dest, src } => {
                 let src = *src as usize;
-                check_address!(src, "`src` register is out of bounds");
                 let src = fetch_value!(src, Value::Boolean, "`src` register's value is not a Boolean");
 
                 let dest = *dest as usize;
-                check_address!(dest, "`dest` register is out of bounds");
                 let (dest, dest_value) = fetch_value_and_ptr!(dest, Value::Boolean, "`dest` register's value is not a Boolean");
 
                 *dest = match command {
@@ -404,12 +463,9 @@ fn main() {
 
             Command::LogicalNot { dest, src } => {
                 let src = *src as usize;
-                check_address!(src, "`src` register is out of bounds");
                 let src = fetch_value!(src, Value::Boolean, "`src` register's value is not a Boolean");
 
                 let dest = *dest as usize;
-                check_address!(dest, "`dest` register is out of bounds");
-                
                 registers[dest] = Value::Boolean(!src);
             }
 
