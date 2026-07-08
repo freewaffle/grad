@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::all)]
 
-use std::collections::HashMap;
-
 #[allow(dead_code)]
 mod vm {
     pub const REGISTER_COUNT: usize = 128;
@@ -182,7 +180,7 @@ mod vm {
 fn main() {
     use vm::*;
 
-    let mut closures: HashMap<ptr::Register, Vec<Command>> = HashMap::new();
+    let mut closures: Vec<Vec<Command>> = Vec::new();
     
     // simple loop:
     /*
@@ -229,7 +227,7 @@ fn main() {
         Command::Add { dest: 1, src: 0 }
     ];
             
-    closures.insert(0, main);
+    closures.push(main);
 
     let mut routine_stack: Vec<Routine> = vec![
         Routine::new(0)
@@ -239,7 +237,7 @@ fn main() {
 
     let mut code_ok = true;
 
-    for (cc, closure) in &closures {
+    for (cc, closure) in closures.iter().enumerate() {
         for (pc, command) in closure.iter().enumerate() {
             macro_rules! error {
                 ($fmt:expr) => {
@@ -325,7 +323,7 @@ fn main() {
     'vm_loop: while let Some(routine) = routine_stack.last_mut() {
         let pc = &mut routine.pc;
         let closure_addr = routine.closure_addr;
-        let closure = closures.get(&closure_addr).expect("invalid routine's closure address");
+        let closure = &closures[closure_addr as usize];
         let command = if let Some(command) = closure.get(*pc) {
             command
         } else {
