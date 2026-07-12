@@ -26,7 +26,7 @@ mod vm {
 
     #[repr(u8)]
     pub enum Command {
-        Dismiss,
+        NoOp,
         HaltVM,
 
         /// Stores value `value` into register `dest`.
@@ -146,7 +146,7 @@ mod vm {
     impl Command {
         pub fn get_type_str(&self) -> &'static str {
             match self {
-                Command::Dismiss => "Dismiss",
+                Command::NoOp => "NoOp",
                 Command::HaltVM => "HaltVM",
                 Command::Store { .. } => "Store",
                 Command::Add { .. } => "Add",
@@ -387,7 +387,7 @@ fn main() {
         }
 
         match command {
-            Command::Dismiss => {}
+            Command::NoOp => {}
 
             Command::HaltVM => {
                 break 'vm_loop;
