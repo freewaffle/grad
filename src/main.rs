@@ -4,11 +4,12 @@
 #[allow(dead_code)]
 mod vm {
     pub const REGISTER_COUNT: usize = 128;
+    pub const MAX_ROUTINE_COUNT: usize = 256;
 
     pub mod ptr {
         pub type Register = u8;
         pub type Instruction = u16;
-        pub type Routine = u16;
+        pub type Closure = u8;
     }
 
     #[derive(Clone, Copy, Debug)]
@@ -137,8 +138,8 @@ mod vm {
         /// Stops the current closure and returns to the previous one.
         Break,
         Call {
-            routine: ptr::Routine,
-            args: Vec<RoutineArgument>
+            closure: ptr::Closure,
+            register_head: ptr::Register,
         }
     }
 
@@ -174,14 +175,17 @@ mod vm {
     }
 
     pub struct Routine {
-        pub closure_addr: ptr::Register,
+        pub closure_addr: ptr::Closure,
+        pub register_head: ptr::Register,
         pub pc: usize
     }
 
     impl Routine {
-        pub fn new(closure_addr: ptr::Register) -> Self {
+        #[inline]
+        pub fn new(closure_addr: ptr::Closure, register_head: ptr::Register) -> Self {
             Self {
                 closure_addr,
+                register_head,
                 pc: 0
             }
         }
@@ -193,55 +197,25 @@ fn main() {
 
     let mut closures: Vec<Vec<Command>> = Vec::new();
     
-    // simple loop:
-    /*
-    let main = vec![
-        Command {
-            kind: CommandKind::Store,
-            args: vec![
-                Value::Address(0),
-                Value::Number(1000.)
-            ]
-        },
-        Command {
-            kind: CommandKind::Store,
-            args: vec![
-                Value::Address(1),
-                Value::Number(0.)
-            ]
-        },
+    let extra_closure = vec![
+        Command::Store { dest: 2, value: Value::Number(6.) },
+        Command::Multiply { dest: 2, src: 2 },
+        Command::Add { dest: 2, src: 0 },
     ];
-
-    let cycle = vec![
-        Command {
-            kind: CommandKind::Add,
-            args: vec![
-                Value::Address(1),
-                Value::Number(1.)
-            ]
-        },
-        Command {
-            kind: CommandKind::GreaterThanOrEqual,
-            args: vec![
-                Value::Address(2),
-                Value::Address(0),
-                Value::Address(1)
-            ]
-        }
-    ];
-    */
 
     let main = vec![
         Command::Store { dest: 0, value: Value::Number(4.) },
         Command::Store { dest: 1, value: Value::Number(4.) },
         Command::Multiply { dest: 1, src: 0 },
-        Command::Add { dest: 1, src: 0 }
+        Command::Add { dest: 1, src: 0 },
+        Command::Call { closure: 1, register_head: 0 },
     ];
             
-    closures.push(main);
+    closures.push(main); /* 0 */
+    closures.push(extra_closure); /* 1 */
 
     let mut routine_stack: Vec<Routine> = vec![
-        Routine::new(0)
+        Routine::new(0, 0)
     ];
 
     let mut registers = [Value::Nil; REGISTER_COUNT];
@@ -266,10 +240,6 @@ fn main() {
             }
 
             match command {
-                Command::Dismiss => {}
-
-                Command::HaltVM => {}
-
                 Command::Store { dest, .. } => {
                     let dest = *dest as usize;
                     if dest >= REGISTER_COUNT {
@@ -277,13 +247,13 @@ fn main() {
                     }
                 }
 
-                Command::Add { dest, src } |
-                Command::Subtract { dest, src } |
-                Command::Multiply { dest, src } |
-                Command::Divide { dest, src } |
-                Command::IntDivide { dest, src } |
-                Command::Modulo { dest, src } |
-                Command::Power { dest, src } => {
+                Command::Add { dest, src }
+                | Command::Subtract { dest, src }
+                | Command::Multiply { dest, src }
+                | Command::Divide { dest, src }
+                | Command::IntDivide { dest, src }
+                | Command::Modulo { dest, src }
+                | Command::Power { dest, src } => {
                     let src = *src as usize;
                     check_register_ptr!(src, "`src` register is out of bounds");
 
@@ -291,12 +261,12 @@ fn main() {
                     check_register_ptr!(dest, "`dest` register is out of bounds");
                 }
 
-                Command::Equal { dest, left, right } |
-                Command::NotEqual { dest, left, right } |
-                Command::GreaterThan { dest, left, right } |
-                Command::GreaterThanOrEqual { dest, left, right } |
-                Command::LessThan { dest, left, right } |
-                Command::LessThanOrEqual { dest, left, right } => {
+                Command::Equal { dest, left, right }
+                | Command::NotEqual { dest, left, right }
+                | Command::GreaterThan { dest, left, right }
+                | Command::GreaterThanOrEqual { dest, left, right }
+                | Command::LessThan { dest, left, right }
+                | Command::LessThanOrEqual { dest, left, right } => {
                     let left = *left as usize;
                     check_register_ptr!(left, "`left` register is out of bounds");
 
@@ -307,8 +277,8 @@ fn main() {
                     check_register_ptr!(dest, "`dest` register is out of bounds");
                 }
 
-                Command::LogicalAnd { dest, src } |
-                Command::LogicalOr { dest, src } => {
+                Command::LogicalAnd { dest, src }
+                | Command::LogicalOr { dest, src } => {
                     let src = *src as usize;
                     check_register_ptr!(src, "`src` register is out of bounds");
 
@@ -324,14 +294,40 @@ fn main() {
                     check_register_ptr!(dest, "`dest` register is out of bounds");
                 }
 
-                _ => todo!()
+                Command::Compare { register } => {
+                    let register = *register as usize;
+                    check_register_ptr!(register, "`register` register is out of bounds");
+                }
+
+                Command::Jump { dest } => {
+                    let dest = *dest as usize;
+                    if dest >= closure.len() {
+                        error!("`dest` instruction is out of bounds");
+                    }
+                }
+
+                Command::Call { closure, register_head } => {
+                    let closure = *closure as usize;
+                    if closure >= closures.len() {
+                        error!("`closure` is out of bounds");
+                    }
+
+                    let register_head = *register_head as usize;
+                    check_register_ptr!(register_head, "`register_head` register is out of bounds");
+                }
+
+                _ => {}
             }
         }
     }
 
     if !code_ok { return }
 
-    'vm_loop: while let Some(routine) = routine_stack.last_mut() {
+    'vm_loop: while !routine_stack.is_empty() {
+        let routine_count = routine_stack.len();
+
+        let routine = routine_stack.last_mut().unwrap();
+
         let pc = &mut routine.pc;
         let closure_addr = routine.closure_addr;
         let closure = &closures[closure_addr as usize];
@@ -343,6 +339,18 @@ fn main() {
             continue 'vm_loop;
         };
 
+        let mut pushing_routine: Option<Routine> = None;
+
+        macro_rules! next_command {
+            () => {
+                if let Some(new_routine) = pushing_routine {
+                    routine_stack.push(new_routine);
+                }
+
+                continue 'vm_loop;
+            };
+        }
+
         macro_rules! error {
             ($fmt:expr) => {
                 eprintln!("GVM: c{closure_addr}:p{pc}:{}: {}", command.get_type_str(), $fmt);
@@ -352,7 +360,7 @@ fn main() {
         macro_rules! proceed {
             () => {
                 *pc += 1;
-                continue 'vm_loop;
+                next_command!();
             };
         }
 
@@ -389,13 +397,13 @@ fn main() {
                 registers[*dest as usize] = *value;
             }
 
-            Command::Add { dest, src } |
-            Command::Subtract { dest, src } |
-            Command::Multiply { dest, src } |
-            Command::Divide { dest, src } |
-            Command::IntDivide { dest, src } |
-            Command::Modulo { dest, src } |
-            Command::Power { dest, src } => {
+            Command::Add { dest, src }
+            | Command::Subtract { dest, src }
+            | Command::Multiply { dest, src }
+            | Command::Divide { dest, src }
+            | Command::IntDivide { dest, src }
+            | Command::Modulo { dest, src }
+            | Command::Power { dest, src } => {
                 let src = *src as usize;
                 let value: f32 = if let Value::Number(value) = registers[src] {
                     value
@@ -419,12 +427,12 @@ fn main() {
                 };
             }
 
-            Command::Equal { dest, left, right } |
-            Command::NotEqual { dest, left, right } |
-            Command::GreaterThan { dest, left, right } |
-            Command::GreaterThanOrEqual { dest, left, right } |
-            Command::LessThan { dest, left, right } |
-            Command::LessThanOrEqual { dest, left, right } => {
+            Command::Equal { dest, left, right }
+            | Command::NotEqual { dest, left, right }
+            | Command::GreaterThan { dest, left, right }
+            | Command::GreaterThanOrEqual { dest, left, right }
+            | Command::LessThan { dest, left, right }
+            | Command::LessThanOrEqual { dest, left, right } => {
                 let left = *left as usize;
                 let left: f32 = if let Value::Number(value) = registers[left] {
                     value
@@ -455,8 +463,8 @@ fn main() {
                 };
             }
 
-            Command::LogicalAnd { dest, src } |
-            Command::LogicalOr { dest, src } => {
+            Command::LogicalAnd { dest, src }
+            | Command::LogicalOr { dest, src } => {
                 let src = *src as usize;
                 let src = fetch_value!(src, Value::Boolean, "`src` register's value is not a Boolean");
 
@@ -478,13 +486,50 @@ fn main() {
                 registers[dest] = Value::Boolean(!src);
             }
 
-            _ => todo!()
+            /* compare, beginning, break */
+
+            Command::Compare { register } => {
+                let register = *register as usize;
+                let value = fetch_value!(register, Value::Boolean, "`register` register's value is not a Boolean");
+
+                if !value {
+                    *pc += 1;
+                }
+            }
+
+            Command::Jump { dest } => {
+                let dest = *dest as usize;
+                *pc = dest;
+                next_command!();
+            }
+
+            Command::JumpToBeginning => {
+                *pc = 0;
+                next_command!();
+            }
+
+            Command::Break => {
+                routine_stack.pop();
+                next_command!();
+            }
+
+            Command::Call { closure, register_head } => {
+                if routine_count >= MAX_ROUTINE_COUNT {
+                    error!("routine stack overflow");
+                    proceed!();
+                }
+
+                let new_routine = Routine::new(*closure, *register_head);
+                // routine_stack.push(new_routine);
+                pushing_routine = Some(new_routine);
+            }
         }
 
         proceed!();
     }
 
     println!("register 1 = {:?}", registers[1]);
+    println!("register 2 = {:?}", registers[2]);
 }
 
 /*
